@@ -1,0 +1,203 @@
+---
+title: "Project DS with R"
+author: "Alexis Andreani"
+date: "06/04/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Note to do: 
+### Very important
+### recompute the data CAC40 making the weighted market cap on all the data and 
+### not only the most high capitalised value
+
+## I. Portoflio Strategy
+### Introduction:
+
+In this project we will try to conceive a portfolio strategy investment. The portfolio conceived would be based on 
+CAC40 stocks. Therefore, the first step will to construct a benchmark portfolio by creating an index on CAC40 stocks based on their market capitalization. This first portfolio will serve as a benchmark for a more adavanced strategy that will be presented in a second part of this project.
+
+### 1) Markt Cap Benchmark
+
+#### Library and import data
+The first step in this project will be to import specific library that will be needed for our projects. Then,
+once the library installed it will be possible to import the data that we need for our study.
+```{r, include=FALSE}
+library(tidyverse)
+library(plotly)
+library(xts)
+library(tseries)
+library(quantmod)
+library(PerformanceAnalytics)
+require(smooth)
+require(Mcomp)
+library(quantmod)
+library(forecast)
+library(lubridate)
+library(tidyquant)
+library(ggplot2)
+library(rvest)
+library(datapasta)
+library(BatchGetSymbols)
+```
+#### Data: CAC 40
+The benchmark portfolio will be based on stocks of the CAC40. The data and ressources link to
+this index will be import from the YahooFinance website with the package tidyquant and its tq_get()
+method. (ref: https://www.rdocumentation.org/packages/tidyquant/versions/1.0.3/topics/tq_get)
+
+```{r}
+(tq_get("^FCHI", get = "stock.prices", from = Sys.Date()-252*2, to = Sys.Date()) %>%
+    ggplot(aes(x = date, y = adjusted)) +
+    geom_line(color = palette_light()[[1]]) + 
+    scale_y_continuous() +
+    labs(title = "CAC40 Index", 
+         subtitle = "Continuous Scale", 
+         y = "Closing Price", x = "") + 
+    theme_grey()) %>%
+  ggplotly()
+#getQuote("MSFT", what = yahooQF(c("Market Capitalization")))
+```
+#### Construction of the Benchmark:
+```{r}
+## Copy paste from url: https://fr.finance.yahoo.com/quote/%5EFCHI/components/ with add-in 
+stock_CAC_40 <- read.csv('stock_cac_40.csv')
+head(stock_CAC_40,5)
+#stock_CAC_40$Symbole
+## Get all the symbole from CAC (Symbol/ticker needed to import the data from API)
+```
+
+
+#### Get Market Capitalisation:
+Get the market capitalization for the top 30 best performance of the CAC40. Then we select the 20 best market capitalisation and compute their weight in order to create our benchmark for our portfolio strategy. Two different portfolio benchmark could be use based on that. First a portfolio compose only of the 20 biggest capitalisation on the CAC40 but with the same amount invested in each <=> Equally Weighted Portfolio (EWP). Then the second potential potfolio is the Market Cap wieghted POrtfolio. The weight associated with each stock will be computed as the ratio of the maarket capitalization link to the stock over the total market capitalization of the 20 stocks.
+```{r}
+## For each stocks within the 30 best stock performance of the CAC40
+## Use of getquote function
+CAC40_MrktCap <- getQuote(stock_CAC_40$Symbole, what = yahooQF(c("Market Capitalization")))
+
+## We keep the top 20 biggest capitalisations
+CAC40_MrktCap <- CAC40_MrktCap[order(-CAC40_MrktCap$`Market Capitalization`),][1:20,]
+
+## creating column weight 
+CAC40_MrktCap$weight <- CAC40_MrktCap$`Market Capitalization`/sum(CAC40_MrktCap$`Market Capitalization`)
+CAC40_MrktCap <- tibble::rownames_to_column(CAC40_MrktCap, "Tickers")
+```
+
+#### Get data for selected stocks of the Benchmark
+```{r,warning=FALSE}
+for (i in length(stock_CAC_40$Symbole)){
+  cac <- tq_get(stock_CAC_40$Symbole,get="stock.prices",from=Sys.Date()-4*252,to=Sys.Date())
+}
+```
+
+
+```{r}
+cac$MktCap<-cac$volume*cac$adjusted
+cacMktCap <- cac[,c(1,2,9)]
+cacStock <- cac[,c(1,2,8)]
+cacMktCap <- cacMktCap %>% pivot_wider(names_from = symbol,values_from = MktCap)
+cacStock <- cacStock %>% pivot_wider(names_from = symbol,values_from = adjusted)
+ ## Use of pivot wider to get a dataframe with one column for one timeserie associated to the stock
+```
+
+```{r}
+(cac %>%
+  group_by(symbol,date) %>%
+  #summarise(Avg_Cap=mean(Mkt_Cap)) %>%
+  ggplot(aes(x=date,y=adjusted,color=symbol)) +geom_line()+theme_bw()) %>%
+  ggplotly()
+```
+MaketCap Weighted Portfolio construction
+```{r}
+## For each stocks within the 30 best stock performance of the CAC40
+## Use of getquote function
+CAC40_MrktCap <- getQuote(stock_CAC_40$Symbole, what = yahooQF(c("Market Capitalization")))
+
+## We keep the top 20 biggest capitalisations
+CAC40_MrktCap <- CAC40_MrktCap[order(-CAC40_MrktCap$`Market Capitalization`),][1:20,]
+
+## creating column weight 
+CAC40_MrktCap$weight <- CAC40_MrktCap$`Market Capitalization`/sum(CAC40_MrktCap$`Market Capitalization`)
+CAC40_MrktCap <- tibble::rownames_to_column(CAC40_MrktCap, "Tickers")
+```
+
+```{r}
+CAC_portfolio_ts <- tq_get(CAC40_MrktCap$Tickers, get = "stock.prices", from = Sys.Date()-252*2, to = Sys.Date())
+CAC_portfolio_ts <- CAC_portfolio_ts[,c(1,2,8)]
+CAC_portfolio_ts<- CAC_portfolio_ts %>% pivot_wider(names_from = symbol,values_from = adjusted)
+CAC_portfolio_ts <- xts(CAC_portfolio_ts[,-1],order.by = CAC_portfolio_ts$date)
+  
+#weight_EWP <- rep(1/length(cacMktCap$symbol),length(cacMktCap$symbol))
+#weight_EWP <- sapply(weight_EWP,function(i){
+#  return(i*0+1/length(CAC40_MrktCap$Tickers))
+#  })
+#EWP_portfolio_returns <-na.omit(Return.portfolio(Return.calculate(cacStock$adjusted),weights = weight_EWP))
+```
+
+```{r}
+MWP_portfolio_returns <-na.omit(Return.portfolio(Return.calculate(CAC_portfolio_ts),weights = CAC40_MrktCap$weight))
+```
+
+```{r}
+market_cac40 <-tq_get('^FCHI',get="stock.prices",from=Sys.Date()-4*252,to=Sys.Date())
+market_cac40 <-market_cac40[,c(1,2,8)] ## keep only date column symbol and adjusted
+market_cac40 <- market_cac40 %>% pivot_wider(names_from = symbol,values_from = adjusted) 
+market_cac40 <- xts(market_cac40[,-1],order.by = market_cac40$date)
+```
+
+
+
+```{r}
+view_benchmark <- Portfolio %>%
+    ggplot(aes(x = index(Portfolio), y = coredata(Portfolio$Total))) +
+    geom_line(color = palette_light()[[1]]) + 
+    scale_y_continuous() +
+    labs(title = "Benchmark Index", 
+         subtitle = "Continuous Scale", 
+         y = "Closing Price", x = "") + 
+    theme_grey()
+ggplotly(view_benchmark)
+```
+#### Evaluation of the Benchmark:
+##### Return of the benchmark:
+```{r,cache=FALSE}
+dlnS=diff(log(Portfolio$Total))
+view_benchmark <- Portfolio %>%
+    ggplot(aes(x = index(Portfolio), y = coredata(diff(log(Portfolio$Total))))) +
+    geom_line(color = palette_light()[[1]]) + 
+    scale_y_continuous() +
+    labs(title = "Benchmark Index return", 
+         subtitle = "Continuous Scale", 
+         y = "Daily return", x = "") + 
+    theme_grey()
+ggplotly(view_benchmark)
+```
+
+#### Distribution of the return:
+```{r,cache=FALSE}
+return <- na.omit(diff(log(Portfolio$Total)))
+return %>%
+  ggplot(aes(x=return)) + geom_histogram()
+## Add labels + titles
+summary(return)
+``` 
+Even if the return seems to present a negative skewness, the return are globally quite positif on a
+daily basis, with 0.06% mean return per day. And a positif median. Some extreme positive values can also be noted.
+Due to the composition of the index the portfolio benchmark seems to have a similarly pattern and behavior as the overall CAC40 index. Before moving on a more advanced Portfolio we are going to evaluate the global performance of this benchmark in order to have a basis of comparison with our next Portfolio.
+
+#### Performance metrics:
+```{r}
+df_metrics <- data.frame("EWP"=numeric(),"MWP"=numeric())
+df_metrics[1,] <- c(mean(EWP_portfolio_returns),mean(MWP_portfolio_returns))
+df_metrics[2,] <- c(StdDev(EWP_portfolio_returns),StdDev(MWP_portfolio_returns))
+df_metrics[3,] <- c(mean(EWP_portfolio_returns)/StdDev(EWP_portfolio_returns),mean(MWP_portfolio_returns)/StdDev(MWP_portfolio_returns))
+df_metrics[4,] <- c(VaR(EWP_portfolio_returns,p=0.95),VaR(MWP_portfolio_returns,p=0.95))
+df_metrics[5,] <- c(maxdrawdown(EWP_portfolio_returns),maxdrawdown(MWP_portfolio_returns))
+df_metrics[6,] <- c(cov(EWP_portfolio_returns,Return.portfolio(Return.calculate(market_cac40)))/var(Return.portfolio(Return.calculate(market_cac40))),cov(MWP_portfolio_returns,Return.portfolio(Return.calculate(market_cac40)))/var(Return.portfolio(Return.calculate(market_cac40))))
+rownames(df_metrics)<-c("Mean Return","Volatility","Sharpe Ratio","VaR","MaxDrawDown","Beta Market")
+```
+
+```{r}
+
+```

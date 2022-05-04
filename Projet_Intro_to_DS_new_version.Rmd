@@ -2,202 +2,520 @@
 title: "Project DS with R"
 author: "Alexis Andreani"
 date: "06/04/2022"
-output: html_document
+output:
+  html_document: 
+  toc: true
+  toc_depth: 3
+  toc_float: 
+      collapsed: true
+      smooth_scroll: true
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r,echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE, message = FALSE)
 ```
-Note to do: 
-### Very important
-### recompute the data CAC40 making the weighted market cap on all the data and 
-### not only the most high capitalised value
 
-## I. Portoflio Strategy
-### Introduction:
+# Introduction:
+In this project we will try to conceive a portfolio strategy investment. The portfolio conceived would be based on CAC40 stocks. Therefore, the first step will be to construct a benchmark portfolio by creating an index on CAC40 stocks based on their market capitalization. This first portfolio will serve as a benchmark for a more adavanced strategy that will be presented in a second part of this project.
 
-In this project we will try to conceive a portfolio strategy investment. The portfolio conceived would be based on 
-CAC40 stocks. Therefore, the first step will to construct a benchmark portfolio by creating an index on CAC40 stocks based on their market capitalization. This first portfolio will serve as a benchmark for a more adavanced strategy that will be presented in a second part of this project.
+# I. Portoflio Strategy:
+## I.I Market Cap Benchmark:
 
-### 1) Markt Cap Benchmark
+### I.I.1 Library and import data:
+The first step in this project will be to import specific library that will be needed for our projects. 
+Then, once the library installed it will be possible to import the data that we need for our study.
+```{r,warning=FALSE,eval = FALSE}
+## to run locally for installing packages needed
+packages <- c("tidyverse", 
+              "dplyr", 
+              "plotly", 
+              "ggcorplot", 
+              "xts", 
+              "tseries", 
+              "quantmod",
+              "PerformanceAnalytics",
+              "smooth",
+              "Mcomp",
+              "forecast",
+              "lubridate",
+              "tidyquant",
+              "ggplot2",
+              "ggthemes",
+              "rvest",
+              "datapasta",
+              "BatchGetSymbols",
+              "knitr")
+install.packages(setdiff(packages, rownames(installed.packages()))) 
+```
 
-#### Library and import data
-The first step in this project will be to import specific library that will be needed for our projects. Then,
-once the library installed it will be possible to import the data that we need for our study.
-```{r, include=FALSE}
+```{r,warning=FALSE}
+## Loading the packages
 library(tidyverse)
+library(dplyr)
 library(plotly)
+library(ggcorrplot)
 library(xts)
 library(tseries)
 library(quantmod)
 library(PerformanceAnalytics)
 require(smooth)
 require(Mcomp)
-library(quantmod)
 library(forecast)
 library(lubridate)
 library(tidyquant)
 library(ggplot2)
+library(ggthemes)
 library(rvest)
 library(datapasta)
 library(BatchGetSymbols)
+library(knitr)
 ```
-#### Data: CAC 40
+### I.I.2 Data CAC 40:
+<br>
 The benchmark portfolio will be based on stocks of the CAC40. The data and ressources link to
-this index will be import from the YahooFinance website with the package tidyquant and its tq_get()
-method. (ref: https://www.rdocumentation.org/packages/tidyquant/versions/1.0.3/topics/tq_get)
-
-```{r}
+this index will be import from the YahooFinance website with the package tidyquant and its tq_get() method. (ref: https://www.rdocumentation.org/packages/tidyquant/versions/1.0.3/topics/tq_get)
+<br>
+```{r gg-oz-gapminder,echo=FALSE,fig.cap = "CAC 40 index prices evolution"}
 (tq_get("^FCHI", get = "stock.prices", from = Sys.Date()-252*2, to = Sys.Date()) %>%
     ggplot(aes(x = date, y = adjusted)) +
     geom_line(color = palette_light()[[1]]) + 
     scale_y_continuous() +
     labs(title = "CAC40 Index", 
          subtitle = "Continuous Scale", 
-         y = "Closing Price", x = "") + 
-    theme_grey()) %>%
+         y = "Adjusted Price", x = "") + 
+    theme_wsj()) %>%
   ggplotly()
-#getQuote("MSFT", what = yahooQF(c("Market Capitalization")))
 ```
-#### Construction of the Benchmark:
-```{r}
-## Copy paste from url: https://fr.finance.yahoo.com/quote/%5EFCHI/components/ with add-in 
-stock_CAC_40 <- read.csv('stock_cac_40.csv')
-head(stock_CAC_40,5)
-#stock_CAC_40$Symbole
+### I.I.3 Construction of the Benchmark:
+<br>
+As we are going to construct our benchmark based on the CAC40 firms, it is first necessary to get the tickers company in order to retrieve there historical data.
+Therefore, we first retrieve a data set with the name of each company and their associated ticker for the yahoo finance API:
+<br>
+```{r,echo=FALSE}
+# Copy paste from url: https://fr.finance.yahoo.com/quote/%5EFCHI/components/ with add-in --> get the list of all the tickers from CAC40 
+stock_CAC_40 <- read.csv('CAC_40_firms.csv',sep = ';')
+kable(head(stock_CAC_40,5),caption = "DataSet Extract")
+```
+
+<br><br>
+
+
+### I.I.4 Get Market Capitalisation:
+
+<br><br>
+
+Get the market capitalization for all the firms in the CAC40. Then we compute their weight in order to create our benchmark for our portfolio strategy. Two different portfolio benchmark could be use based on that. 
+First, we make a portfolio compose all the capitalisation on the CAC40 but with the same amount invested in each. This, will be the "Equally Weighted Portfolio" (EWP). 
+Then, the second potential potfolio is the "Market Cap wieghted Portfolio" (MWP). 
+The weight associated with each stock will be computed as the ratio of the market capitalization link to the stock over the total market capitalization of the stocks.
+<br><br>
+
+### I.I.5 Get data for selected stocks of the Benchmark:
+```{r,warning=FALSE,cache=TRUE,echo=FALSE}
 ## Get all the symbole from CAC (Symbol/ticker needed to import the data from API)
+cac <- tq_get(stock_CAC_40$ticker,get="stock.prices",from=Sys.Date()-4*252,to=Sys.Date())
 ```
-
-
-#### Get Market Capitalisation:
-Get the market capitalization for the top 30 best performance of the CAC40. Then we select the 20 best market capitalisation and compute their weight in order to create our benchmark for our portfolio strategy. Two different portfolio benchmark could be use based on that. First a portfolio compose only of the 20 biggest capitalisation on the CAC40 but with the same amount invested in each <=> Equally Weighted Portfolio (EWP). Then the second potential potfolio is the Market Cap wieghted POrtfolio. The weight associated with each stock will be computed as the ratio of the maarket capitalization link to the stock over the total market capitalization of the 20 stocks.
-```{r}
-## For each stocks within the 30 best stock performance of the CAC40
-## Use of getquote function
-CAC40_MrktCap <- getQuote(stock_CAC_40$Symbole, what = yahooQF(c("Market Capitalization")))
-
-## We keep the top 20 biggest capitalisations
-CAC40_MrktCap <- CAC40_MrktCap[order(-CAC40_MrktCap$`Market Capitalization`),][1:20,]
-
-## creating column weight 
-CAC40_MrktCap$weight <- CAC40_MrktCap$`Market Capitalization`/sum(CAC40_MrktCap$`Market Capitalization`)
-CAC40_MrktCap <- tibble::rownames_to_column(CAC40_MrktCap, "Tickers")
-```
-
-#### Get data for selected stocks of the Benchmark
-```{r,warning=FALSE}
-for (i in length(stock_CAC_40$Symbole)){
-  cac <- tq_get(stock_CAC_40$Symbole,get="stock.prices",from=Sys.Date()-4*252,to=Sys.Date())
-}
-```
-
-
-```{r}
+We get the time series data for each firm over the past 4 years. 
+Based on this information we will compute the historical market capitalization of the firms:
+```{r,warning=FALSE,cache=TRUE,echo=FALSE}
 cac$MktCap<-cac$volume*cac$adjusted
 cacMktCap <- cac[,c(1,2,9)]
 cacStock <- cac[,c(1,2,8)]
 cacMktCap <- cacMktCap %>% pivot_wider(names_from = symbol,values_from = MktCap)
+## Use of pivot wider to get a dataframe with one column for one timeserie associated to the market cap
 cacStock <- cacStock %>% pivot_wider(names_from = symbol,values_from = adjusted)
- ## Use of pivot wider to get a dataframe with one column for one timeserie associated to the stock
+## Use of pivot wider to get a dataframe with one column for one timeserie associated to the stock
 ```
 
-```{r}
+```{r,warning=FALSE}
+
 (cac %>%
-  group_by(symbol,date) %>%
-  #summarise(Avg_Cap=mean(Mkt_Cap)) %>%
-  ggplot(aes(x=date,y=adjusted,color=symbol)) +geom_line()+theme_bw()) %>%
+  group_by(symbol) %>%
+  ggplot(aes(x=date,y=adjusted,color=symbol))+geom_line()+
+  theme_wsj()+
+  theme(plot.title = element_text(size=22))+
+   labs(x = "Time", 
+        y = 'Stock Price', 
+        title = "Evolution of the prices of CAC40 stocks")) %>%
   ggplotly()
 ```
-MaketCap Weighted Portfolio construction
-```{r}
-## For each stocks within the 30 best stock performance of the CAC40
-## Use of getquote function
-CAC40_MrktCap <- getQuote(stock_CAC_40$Symbole, what = yahooQF(c("Market Capitalization")))
 
-## We keep the top 20 biggest capitalisations
-CAC40_MrktCap <- CAC40_MrktCap[order(-CAC40_MrktCap$`Market Capitalization`),][1:20,]
+### I.I.6 MarketCap Weighted Portfolio construction:
 
-## creating column weight 
-CAC40_MrktCap$weight <- CAC40_MrktCap$`Market Capitalization`/sum(CAC40_MrktCap$`Market Capitalization`)
-CAC40_MrktCap <- tibble::rownames_to_column(CAC40_MrktCap, "Tickers")
+In order to construct our benchmark we need to a affect a certain weight to every assert in our cac dataset.
+To do so we use the market capitalisation associated to each asset. 
+Then, we can associate a given weight to each asset by using the following formula:
+$$\forall i \in CAC, weight_i=\frac{market cap_i}{\sum{marketcap}}$$
+```{r,cache=TRUE,echo=FALSE}
+CAC40_MrktCap<-(cac %>% 
+  group_by(symbol) %>%
+  summarise(AvgCap = mean(MktCap)) %>%
+  arrange(desc(AvgCap))) #%>% summarise(AvgCap/sum(AvgCap))
+CAC40_MrktCap$weight<-CAC40_MrktCap$AvgCap/sum(CAC40_MrktCap$AvgCap)
+kable(head(CAC40_MrktCap,10),caption = "Company and market cap weight")
+```
+We Reorder the dataframe by order of the tickers weight.
+Then, we can compute the portfolio return of both basic model the equaly weighted and the 
+market cap weight by using the portofolio return:
+```{r,warning=FALSE,cache=TRUE,echo=FALSE}
+cacStock[,c(-1)]<-cacStock[,CAC40_MrktCap$symbol]
+cacStock<-xts(cacStock[,-1],order.by = as.Date(cacStock$date))
+
+## define the weight assosicated to the stock if equally weighted portfolio same weight
+weight_EWP <- rep(1/length(CAC40_MrktCap$symbol),length(CAC40_MrktCap$symbol))
+MWP_portfolio_returns <-na.omit(Return.portfolio(Return.calculate(cacStock),weights = CAC40_MrktCap$weight))
+EWP_portfolio_returns <-na.omit(Return.portfolio(Return.calculate(cacStock),weights = weight_EWP))
+#kable(head(MWP_portfolio_returns),caption = "Market Cap Weight Portfolio Return firsr lines")
 ```
 
 ```{r}
-CAC_portfolio_ts <- tq_get(CAC40_MrktCap$Tickers, get = "stock.prices", from = Sys.Date()-252*2, to = Sys.Date())
-CAC_portfolio_ts <- CAC_portfolio_ts[,c(1,2,8)]
-CAC_portfolio_ts<- CAC_portfolio_ts %>% pivot_wider(names_from = symbol,values_from = adjusted)
-CAC_portfolio_ts <- xts(CAC_portfolio_ts[,-1],order.by = CAC_portfolio_ts$date)
-  
-#weight_EWP <- rep(1/length(cacMktCap$symbol),length(cacMktCap$symbol))
-#weight_EWP <- sapply(weight_EWP,function(i){
-#  return(i*0+1/length(CAC40_MrktCap$Tickers))
-#  })
-#EWP_portfolio_returns <-na.omit(Return.portfolio(Return.calculate(cacStock$adjusted),weights = weight_EWP))
+(ggplot(EWP_portfolio_returns,
+         aes(x=index(EWP_portfolio_returns),
+             y=coredata(EWP_portfolio_returns)))+
+   geom_line()+
+   theme_wsj()+
+   theme(axis.title=element_text(size=12))+
+   labs(x = "Time", 
+        y = 'EWP Return Prices', 
+        title = "Returns of the EW Portfolio")) %>%
+  ggplotly()
 ```
-
-```{r}
-MWP_portfolio_returns <-na.omit(Return.portfolio(Return.calculate(CAC_portfolio_ts),weights = CAC40_MrktCap$weight))
+$\\$
+We then extract the data of the CAC40 in order to compute certain metrics and measure 
+our benchmark to the CAC40 index:
+$\\$
+```{r,warning=FALSE,echo=FALSE}
+index_cac40 <-tq_get('^FCHI',get="stock.prices",from=Sys.Date()-4*252,to=Sys.Date())
+index_cac40 <-index_cac40[,c(1,2,8)] ## keep only date column symbol and adjusted
+index_cac40 <-index_cac40 %>% pivot_wider(names_from = symbol,values_from = adjusted) 
+index_cac40 <- xts(index_cac40[,-1],order.by = as.Date(index_cac40$date))
+index_cac40<-na.omit(Return.portfolio(Return.calculate(index_cac40)))
 ```
-
-```{r}
-market_cac40 <-tq_get('^FCHI',get="stock.prices",from=Sys.Date()-4*252,to=Sys.Date())
-market_cac40 <-market_cac40[,c(1,2,8)] ## keep only date column symbol and adjusted
-market_cac40 <- market_cac40 %>% pivot_wider(names_from = symbol,values_from = adjusted) 
-market_cac40 <- xts(market_cac40[,-1],order.by = market_cac40$date)
-```
-
-
-
-```{r}
-view_benchmark <- Portfolio %>%
-    ggplot(aes(x = index(Portfolio), y = coredata(Portfolio$Total))) +
-    geom_line(color = palette_light()[[1]]) + 
-    scale_y_continuous() +
-    labs(title = "Benchmark Index", 
-         subtitle = "Continuous Scale", 
-         y = "Closing Price", x = "") + 
-    theme_grey()
-ggplotly(view_benchmark)
-```
-#### Evaluation of the Benchmark:
-##### Return of the benchmark:
-```{r,cache=FALSE}
-dlnS=diff(log(Portfolio$Total))
-view_benchmark <- Portfolio %>%
-    ggplot(aes(x = index(Portfolio), y = coredata(diff(log(Portfolio$Total))))) +
-    geom_line(color = palette_light()[[1]]) + 
-    scale_y_continuous() +
-    labs(title = "Benchmark Index return", 
-         subtitle = "Continuous Scale", 
-         y = "Daily return", x = "") + 
-    theme_grey()
-ggplotly(view_benchmark)
-```
-
-#### Distribution of the return:
-```{r,cache=FALSE}
-return <- na.omit(diff(log(Portfolio$Total)))
-return %>%
-  ggplot(aes(x=return)) + geom_histogram()
-## Add labels + titles
-summary(return)
-``` 
-Even if the return seems to present a negative skewness, the return are globally quite positif on a
-daily basis, with 0.06% mean return per day. And a positif median. Some extreme positive values can also be noted.
-Due to the composition of the index the portfolio benchmark seems to have a similarly pattern and behavior as the overall CAC40 index. Before moving on a more advanced Portfolio we are going to evaluate the global performance of this benchmark in order to have a basis of comparison with our next Portfolio.
-
-#### Performance metrics:
-```{r}
+### I.I.7 Performance metrics:
+In order to have a basis to compare our future strategy with our benchmark portfolios we can compute different performance metrics of those portfolios who give us informations on the performance, risk profile and link to the market of our portfolios. 
+The main metrics computed are the mean, the volatilty, the sharpe ratio and the Value at Risk. 
+```{r,echo=FALSE}
 df_metrics <- data.frame("EWP"=numeric(),"MWP"=numeric())
-df_metrics[1,] <- c(mean(EWP_portfolio_returns),mean(MWP_portfolio_returns))
-df_metrics[2,] <- c(StdDev(EWP_portfolio_returns),StdDev(MWP_portfolio_returns))
-df_metrics[3,] <- c(mean(EWP_portfolio_returns)/StdDev(EWP_portfolio_returns),mean(MWP_portfolio_returns)/StdDev(MWP_portfolio_returns))
-df_metrics[4,] <- c(VaR(EWP_portfolio_returns,p=0.95),VaR(MWP_portfolio_returns,p=0.95))
-df_metrics[5,] <- c(maxdrawdown(EWP_portfolio_returns),maxdrawdown(MWP_portfolio_returns))
-df_metrics[6,] <- c(cov(EWP_portfolio_returns,Return.portfolio(Return.calculate(market_cac40)))/var(Return.portfolio(Return.calculate(market_cac40))),cov(MWP_portfolio_returns,Return.portfolio(Return.calculate(market_cac40)))/var(Return.portfolio(Return.calculate(market_cac40))))
-rownames(df_metrics)<-c("Mean Return","Volatility","Sharpe Ratio","VaR","MaxDrawDown","Beta Market")
+df_metrics[1,] <- c(Return.annualized(EWP_portfolio_returns),
+                    Return.annualized(MWP_portfolio_returns))
+df_metrics[2,] <- c(StdDev.annualized(EWP_portfolio_returns),
+                    StdDev.annualized(MWP_portfolio_returns))
+df_metrics[3,] <- c(Return.annualized(EWP_portfolio_returns)/StdDev.annualized(EWP_portfolio_returns),
+                    Return.annualized(MWP_portfolio_returns)/StdDev.annualized(MWP_portfolio_returns))
+df_metrics[4,] <- c(VaR(EWP_portfolio_returns,p=0.95),
+                    VaR(MWP_portfolio_returns,p=0.95))
+df_metrics[5,] <- c(maxdrawdown(EWP_portfolio_returns)$maxdrawdown,
+                    maxdrawdown(MWP_portfolio_returns)$maxdrawdown)
+df_metrics[6,] <- c(lm(EWP_portfolio_returns~index_cac40)$coefficients[2],
+                    lm(MWP_portfolio_returns~index_cac40)$coefficients[2])
+rownames(df_metrics)<-c("Mean Return(Annualized)",
+                        "Volatility(Annualized)",
+                        "Sharpe Ratio(Annualized)",
+                        "VaR(daily basis)",
+                        "MaxDrawDown",
+                        "Beta of the portfolios")
+
+kable(df_metrics,caption="Metrics comparison for EWP and MWP")
 ```
+
+```{r,echo=FALSE,cache=TRUE,warning=FALSE}
+data_rm<-cbind(EWP_portfolio_returns,MWP_portfolio_returns,index_cac40)
+```
+```{r}
+(data_rm %>% 
+    ggplot(aes(x = index_cac40, y = EWP_portfolio_returns)) + 
+  geom_point()+
+  theme_wsj()+
+  theme(axis.title=element_text(size=12))+
+  theme(plot.title = element_text(size=16))+
+  labs(x = "Index CAC40 returns", 
+       y = 'EWP POrtfolio Returns', 
+       title = "Regression of the EWP portfolio base on the CAC40 index")+
+  stat_smooth(method = "lm", col = "red")) %>%
+  ggplotly()
+```
+<br><br>
+```{r,echo=FALSE,cache=TRUE,warning=FALSE}
+ggplot(data_rm,aes(x = index_cac40, y = MWP_portfolio_returns)) + 
+  geom_point()+
+  theme_wsj()+
+  theme(axis.title=element_text(size=12))+
+  theme(plot.title = element_text(size=16))+
+  labs(x = "Index CAC40 returns", 
+       y = 'EWP POrtfolio Returns', 
+       title = "Regression of the EWP portfolio base on the CAC40 index")+
+  stat_smooth(method = "lm", col = "blue")
+```
+<br><br>
+The basic benchmark computed present a annualized return over 10% in both case however the portfolios present a quite high volatility resulting in a sharpe ratio below one which mean that this basic mark cap portfolio is not really optimal.
+As we can see with regression plot, both of the portfolio are highly correlated with the CAC40 index around 1 little bit higher than in the case of the Market Cap weighted portfolios. 
+Which is a consistent result as we construct a benchmark very close to the real index of the CAC40 as we use most of the CAC40 firms to construct our benchmark.
+We will now tend to use a more dynamic approach in order to construct a portfolio base on the CAC40 stocks and compare those results to the one observe in this first part.
+
+
+# II. Investment strategy
+## II.1 Asset weight allocation and Correlation data:
+We are going to base the following investments based on the 10th highest market capitalization and then try to study the link on those assets in order to construct the most efficient strategy on those stocks.
+```{r,echo=FALSE}
+return_10 <- cac %>%
+  group_by(symbol) %>%
+  filter(symbol %in% CAC40_MrktCap$symbol[1:10]) %>%
+  mutate(return=close/lag(close)-1) %>% select(symbol,date,return) %>%
+  pivot_wider(names_from = symbol,values_from = return)
+```
+We now have the return for the 10 highest capitalisation of the past 4 years in the CAC40.
+In order to have a diversified portfolio it could be relevent to studied the level of correlation between those 10 assets:
+```{r,echo=FALSE}
+kable(head(na.omit(return_10),10),caption = "Return of the 10 assets")
+```
+
+```{r,echo=FALSE}
+colnames(return_10)<-c("date",stock_CAC_40$nom[stock_CAC_40$ticker %in% 
+                                             colnames(return_10[,-1])])
+return_10[-1,-1] %>%
+  as.matrix() %>% 
+  cor() %>%
+  round(3) %>%
+  ggcorrplot()
+```
+<br><br>
+As we can see the level of correlation between the 10 assets are quite important. It would have been good in order to diversified best our portfolio to have assets in our portfolio with negative correlation. Therefore, we are going to check is there is any assets out of the 10 highets market capitalisation that could be negatively correlated with one of our 10 assets.
+<br><br>
+```{r,echo=FALSE}
+cac_return<-cac %>%
+  group_by(symbol) %>%
+  mutate(return=close/lag(close)-1) %>% select(symbol,date,return) %>%
+  pivot_wider(names_from = symbol,values_from = return)
+
+cac_return[-1,-1] %>%
+  as.matrix() %>% 
+  cor() %>%
+  round(3) %>%
+  ggcorrplot()
+```
+<br><br><br><br>
+We can see that all of the assets available on the CAC40 dataset are all presented with a more or less important positive correlation. 
+Therefore, we prefer to keep to those 10 highest cap stock as they are amoung the highest perforamnce in value of the CAC40 now going to construct first an "optimal" weight allocation of those 10 stocks based on the Markowitz Theory.
+So from now on the test et model will be applied to the 10 following stocks from CAC40:
+
+
+- TotalEnergies
+- Schneider Electric
+- Sanofi
+- LVMH
+- L'oreal
+- Kering
+- Bnp Paribas
+- Axa
+- Airbus
+* Air Liquide
+
+### II.I.1 Portfolio Theory Application:
+```{r,echo=FALSE}
+## construct a matrix for the weight of the assets
+mat_weights<-matrix(nrow = 400,ncol = length(return_10)-1) 
+## Initiating the vector for the returns 
+## link to each portfolio combination
+vec_returns<-vector("numeric",length = 400) 
+portfolio_ret <- vector('numeric', length = 400)
+portfolio_std <- vector('numeric', length = 400)
+sharpe_ratio <- vector('numeric', length = 400)
+mean_ret<-colMeans(na.omit(return_10[,-1]))
+cov_mat<-cov(na.omit(return_10[,-1]))*252
+## Construct 100 different wieghts allocation 
+## with mean, std and sharpe associated to each
+for (i in 1:400){
+  weights <- runif(length(return_10)-1)
+  weights <- weights/sum(weights)
+  
+  # One line of the matrix put the weights allocation by asset
+  mat_weights[i,] <- weights
+  
+  # Portfolio returns
+  p_ret_t <- sum(weights * mean_ret)
+  p_ret_t <- ((p_ret_t + 1)^252) - 1
+  
+  # Storing Portfolio Returns values
+  portfolio_ret[i] <- p_ret_t
+  
+  
+  # Creating and storing portfolio risk
+  p_std_t <- sqrt(t(weights) %*% (cov_mat  %*% weights))
+  portfolio_std[i] <- p_std_t
+  
+  # Creating and storing Portfolio Sharpe Ratios, 
+  # Assumption: risk free rate = 0
+  sr_t <- p_ret_t/p_std_t
+  sharpe_ratio[i] <- sr_t
+  
+}
+portfolio_values <- tibble(Return = portfolio_ret,
+                  Std = portfolio_std,
+                  SharpeRatio = sharpe_ratio)
+colnames(mat_weights)<-colnames(return_10[,-1])
+portfolio_values<-cbind(mat_weights, portfolio_values)
+```
+<br><br>
+We have now construct a table of 100 possible allocations weight for 10 assets.
+Recording all the return stdev and sharpe ratio base on this new data we can find the MaxSharpeRatio Portfolio and the Min Var Portfolio.
+We remind that the Sharpe Ratio si computed as follow:
+$$Sharpe Ratio = \frac{E(Return_portfolio)-r_f}{\sigma_{Portfolio}}$$
+We suppose by conveniance that the risk free rate $r_f$ is equal to 0. Then, in this context we will take the combination of weight that provide the highest sharpe ratio which means the highest risk v reward ratio.
+Based on the 100 simulations of allocation weight we can plot the efficient frontier and the risk v reward of our different allocations:
+```{r,echo=FALSE}
+min_var_portfolio <- portfolio_values[which.min(portfolio_values$Std),]
+opti_portfolio <- portfolio_values[which.max(portfolio_values$SharpeRatio),]
+(portfolio_values %>%
+  ggplot(aes(x = Std, y = Return, color = SharpeRatio))+
+  geom_point()+
+  theme_wsj()+
+  theme(plot.title = element_text(size=16))+
+  theme(axis.title=element_text(size=12))+
+  scale_x_continuous(labels = scales::percent)+
+  scale_fill_viridis_c(option = "plasma")+
+  labs(x = 'Annualized Volatility',
+       y = 'Annualized Returns',
+       title = "Risk v Reward")+
+  geom_point(aes(x = Std,
+                 y = Return), data = min_var_portfolio, color = 'red') +
+  geom_point(aes(x = Std,
+                 y = Return), data = opti_portfolio, color = 'red') +
+  annotate('text', x = opti_portfolio$Std, y = opti_portfolio$Return-0.005, label = "Optimal Portfolio") +
+  annotate('text', x = min_var_portfolio$Std, y = min_var_portfolio$Return-0.005, label = "Min Var portfolio")) %>%
+  ggplotly()
+```
+By doing so we have been able to find the "optimal portfolio" with the highest Sharpe ratio.
+We can describe visually this optimal allocation of our 10 assets:
+<br><br>
+
 
 ```{r}
-
+(opti_portfolio %>%
+  gather("Air Liquide":"TotalEnergies", key = Stock,
+         value = weights) %>%
+  mutate(Stock = as.factor(Stock)) %>%
+  ggplot(aes(x = fct_reorder(Stock,weights), y = weights, fill = Stock)) +
+  geom_bar(stat = 'identity') + 
+  scale_colour_wsj("colors6", "")+
+  theme_wsj()+
+  theme(plot.title = element_text(size=16))+
+  theme(axis.title=element_text(size=12))+
+  labs(x = 'Stock', y = 'weights', title = "Optimal Portfolio Allocation") +
+  scale_y_continuous(labels = scales::percent) +coord_flip()) %>%
+  ggplotly()
 ```
+### II.I.2 ETF Construction:
+<br><br>
+Base on this portfolio analysis we construct a new index base on the 10 assets studied above.
+In deed we are going to compare the performance of our "home-made ETF" which will be construct of the 10 stocks allocated with the weight of the "Optimal Portfolio".
+<br><br>
+```{r,echo=FALSE}
+ETF_prices<-cac[,c(1,2,8)] %>%
+  group_by(symbol) %>%
+  filter(symbol %in% CAC40_MrktCap$symbol[1:10]) %>%
+  pivot_wider(names_from = symbol,values_from = adjusted) 
+ETF_prices$sum<-rowSums(as.matrix(ETF_prices[,-1])%*%diag(opti_portfolio[,-c(11,12,13)]))
+```
+<br><br>
+
+### II.1.3 Plot evolution of the artificial ETF constructed(Optimal Portfolio Weighted):
+
+<br><br>
+```{r,echo=FALSE}
+(ETF_prices %>%
+group_by(date) %>%
+  ggplot(aes(x=date,y=sum))+
+  geom_line()+
+  labs(x = 'Time', y = 'ETF price', title = "Price evolution of the 10 stocks ETF") +
+  theme_wsj()+
+  theme(plot.title = element_text(size=16))+
+  theme(axis.title=element_text(size=12))) %>%
+  ggplotly()
+```
+<br><br>
+
+## II.II Following Trend Startegy:
+
+<br><br>
+Base on this ETF we can follow the trend of this new index on historical data and try to optimise 
+the P&L of this portfolio.
+In order to that we will apply a following trend strategy in order to look on the start of growing trend and the start of bearing trend.
+The technical solution to find those key day of long or short is the Simple Moving Average which general expression is given as follow:
+$$SMA_{i} = \frac{\sum_{i}x_i}{i}$$
+The idea is just to compute a moving average over the i previous day of a stock and to compare to the real value. This less precise representation of the stock will give aview on the longer trend occuring on the stock. In the case of the trend following strategy the idea is to compare the evolution a 10 days moving average ("fast SMA") to a 50 days moving average ("slow SMA")
+<br><br>
+```{r,echo=FALSE}
+ETF_SMA_fast <- xts(SMA(ETF_prices$sum, n=10), order.by=ETF_prices$date)
+ETF_SMA_slow <- xts(SMA(ETF_prices$sum,n=50),order.by=ETF_prices$date)
+ETF_prices$SMA_10<-coredata(ETF_SMA_fast)
+ETF_prices$SMA_50<-coredata(ETF_SMA_slow)
+(ETF_prices %>%
+group_by(date) %>%
+  ggplot(aes(x=date,y=sum))+
+  geom_line()+geom_line(aes(x=date,y=SMA_10,color="SMA fast"))+
+  geom_line(aes(x=date,y=SMA_50,color="SMA Slow"))+
+  theme_wsj()+
+  theme(plot.title = element_text(size=16))+
+  theme(axis.title=element_text(size=12))+
+  labs(x = 'Time', y = 'ETF price', title = "Price evolution of the 10 stocks ETF")+
+  scale_colour_manual("Lines",values=c("SMA fast"="red", "SMA Slow"="blue"))) %>%
+  ggplotly()
+```
+### II.II.1 Backtesting strategy on the 10 assets ETF:
+We try to apply and back test an algorithm simple trend following strategy.
+The idea is to detect the start of rising price period and anticipate the start of a lower trend.
+In this context the method will only indicate time period where to buy ("at low price") and 
+when to sell ("at high price"):
+```{r,echo=FALSE}
+#ETF_prices<-na.omit(ETF_prices)
+ETF_prices$UD <- ifelse(ETF_prices$SMA_10 >= ETF_prices$SMA_50, 1, 0)
+```
+We try to compute what could be the return if we use the trend following strategy on the 
+ETF of the 10th highest market capitalisation of the CAC40.
+```{r,echo=FALSE}
+ETF_prices$Decision <- ifelse(ETF_prices$UD == 1, "BUY", "SELL")
+ETF_prices$Position <- ifelse(ETF_prices$Decision == "BUY", 1, -1)
+ETF_prices$Return<-c(0,diff(log(ETF_prices$sum)))
+ETF_prices$StrategyReturn <- ETF_prices$Return*ETF_prices$Position
+ETF_Trend_Annuel <- Return.annualized(xts(ETF_prices$StrategyReturn,order.by = ETF_prices$date))
+ETF_prices_Risk <- StdDev.annualized(xts(ETF_prices$StrategyReturn,order.by = ETF_prices$date))
+r_f_rate <- 0.0 ## risk rate here set at 2%
+SharpeRatio <- (ETF_Trend_Annuel - r_f_rate)/ETF_prices_Risk
+```
+
+### II.II.2 Summary of our results:
+
+Base on the trend following described earlier we were able to compute the specific return of this strategy. Therefore, we can compute the different metrics information propose earlier and compare those indicators to the one of our market cap benchmark provided in part I:
+```{r,echo=FALSE}
+df_metrics_bis <- data.frame("ETF 10 Stocks"=numeric(),
+                             "ETF 10 stock w Strategy"=numeric())
+df_metrics_bis[1,] <- c(Return.annualized(xts(ETF_prices$Return,
+                                              order.by = ETF_prices$date)),
+                        ETF_Trend_Annuel)
+df_metrics_bis[2,] <- c(StdDev.annualized(xts(ETF_prices$Return,
+                                             order.by = ETF_prices$date)),
+                        ETF_prices_Risk)
+df_metrics_bis[3,] <- c(opti_portfolio$SharpeRatio,
+                        SharpeRatio)
+
+
+rownames(df_metrics_bis)<-c("Mean Return(Annualized)",
+                            "Volatility(Annualized)",
+                            "Sharpe Ratio(Annualized)")
+df_metrics_bis<-cbind(df_metrics_bis,
+                      df_metrics$EWP[1:3],
+                      df_metrics$MWP[1:3])
+colnames(df_metrics_bis)<-c("ETF 10 Stocks",
+                            "ETF 10 stock w Strategy",
+                            "EWP Portfolio",
+                            "MWP Portfolio")
+kable(df_metrics_bis,
+      caption="Performance metrics of the benchmark and ETF")
+```
+
+## Conclusion:
+<br><br>
+The use of the portfolio theory and the max sharpe portfolio help us
+to get an index with better return than our benchmark. However the level of volatility is still very high the
+trend following strategy seems to help gain some higher profit as it present higher return than the simple passive investment in the ETF with a similar level of volatility. However, this method has been efficient in a backtesting process and it is just a theoretical return base on the past data. Furthermore, the computation where quite biased as we doesnt take into account certain cost should happen if the investments were made on the market(risk free rate different of 0, fee cost of transaction,...)
+To conclude, this project has been the occasion to cover different R tools and functions (ggplot, data frame manipulations, use of YahooFinance API) applied to the financial analysis with the use of portfolio management theory. 

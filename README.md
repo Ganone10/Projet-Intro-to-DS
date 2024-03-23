@@ -14,7 +14,7 @@ To run this project, follow these steps:
 
 1. **Install RStudio**: Ensure that you have RStudio installed on your system. You can download and install it from the [RStudio website](https://www.rstudio.com/products/rstudio/download/).
 
-2. **Open R Notebook**: Open the provided R notebook file (`portfolio_strategy.Rmd`) in RStudio.
+2. **Open R Notebook**: Open the provided R notebook file (`Projet_Intro_to_DS_new_version`) in RStudio.
 
 3. **Run Code Cells**: Execute the code cells sequentially by clicking on the "Run" button or pressing Shift + Enter. Make sure to install any required R packages mentioned in the notebook before running the code.
 
